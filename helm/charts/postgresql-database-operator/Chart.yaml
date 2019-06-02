@@ -1,0 +1,14 @@
+name: postgresql-database-operator
+version: 1.0.0
+appVersion: 0.1.0
+description: A Kubernetes operator to create databases inside a running postgresql instance.
+keywords:
+  - postgresql
+  - database
+home: https://github.com/jkroepke/postgres-database-operator
+icon: https://www.postgresql.org/media/img/about/press/elephant.png
+sources:
+  - https://github.com/jkroepke/postgres-database-operator
+maintainers:
+  - name: Jan-Otto Kröpke
+    email: charts@jkroepke.de

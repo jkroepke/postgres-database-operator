@@ -1,0 +1,5 @@
+kopf
+psycopg2-binary
+kubernetes
+PyYAML
+kubernetes
