@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-database-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      application: postgres-database-operator
+  template:
+    metadata:
+      labels:
+        application: postgres-database-operator
+    spec:
+      serviceAccountName: postgres-database-operator
+      containers:
+        - name: postgres-database-operator
+          image: {{ .Values.image }}
+          env:
+            - name: POSTGRESQL_HOST
+              value: {{ .Values.postgresql.host }}
+            - name: POSTGRESQL_POST
+              value: {{ .Values.postgresql.port }}
+            - name: POSTGRESQL_USER
+              value: {{ .Values.postgresql.user }}
+            - name: POSTGRESQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-database-operator
+                  key: POSTGRESQL_PASSWORD
