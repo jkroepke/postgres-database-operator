@@ -1,5 +1,4 @@
 kopf
-psycopg2-binary
+psycopg2
 kubernetes
 PyYAML
-kubernetes
