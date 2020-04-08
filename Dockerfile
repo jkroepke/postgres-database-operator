@@ -1,12 +1,11 @@
 FROM python:3.7
 WORKDIR /src/
 
-COPY requirements.txt /tmp/
+COPY requirements.txt .
 
-RUN apt-get update && apt-get install libpq-dev -y \
-   && sed -i 's/psycopg2-binary/psycopg2/' /tmp/requirements.txt \
-   && pip install --no-cache-dir -r /tmp/requirements.txt \
-   && apt-get remove libpq-dev -y && rm -rf /var/lib/apt/lists/*
+RUN sed -i 's/psycopg2-binary/psycopg2/' requirements.txt \
+   && pip install --no-cache-dir -r requirements.txt \
+   && chgrp -R 0 . && chmod g=u -R .
 
 COPY handlers.py .
 
