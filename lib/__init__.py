@@ -3,7 +3,7 @@ import random
 import string
 from typing import Optional
 
-import kubernetes.client
+import pykube
 import psycopg2
 from hashlib import sha1
 
@@ -17,7 +17,8 @@ def generate_password(length: int) -> str:
 
 
 def generate_db_name(namespace: str, name: str) -> str:
-    return sha1("_".join([namespace, name])).hexdigest()
+    value = "_".join([namespace, name]).encode('utf-8')
+    return sha1(value).hexdigest()
 
 
 def generate_db_username(namespace: str, name: str) -> str:
@@ -114,30 +115,33 @@ def delete_db(con: psycopg2, name: str, owner: str) -> None:
 
 def delete_db_username(con: psycopg2, username: str) -> None:
     with con.cursor() as cur:
-        cur.execute(sql.SQL("DROP USER {};").format(
+        cur.execute(sql.SQL("DROP USER IF EXISTS {};").format(
             sql.Identifier(username)
         ))
 
 
 def generate_kubernetes_secret(name: str, db_host: str, db_port: str, db_name: str, db_username: str,
                                db_password: str) -> dict:
-    data = {
-        'DB_HOSTNAME': db_host,
-        'DB_PORT': db_port,
-        'DB_DATABASE': db_name,
-        'DB_USER': db_username,
-        'DB_PASSWORD': db_password,
+    return {
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "metadata": {
+            "name": name,
+        },
+        "stringData": {
+            'DB_HOSTNAME': db_host,
+            'DB_PORT': db_port,
+            'DB_DATABASE': db_name,
+            'DB_USER': db_username,
+            'DB_PASSWORD': db_password,
+        }
     }
 
-    secret = kubernetes.client.V1Secret(
-        metadata=kubernetes.client.V1ObjectMeta(name=name),
-        string_data=data,
-    )
 
-    api = kubernetes.client.ApiClient()
-    return api.sanitize_for_serialization(secret)
+def create_kubernetes_secret(doc: dict) -> pykube.Secret:
+    api = pykube.HTTPClient(pykube.KubeConfig.from_env())
+    secret = pykube.Secret(api, doc)
+    secret.create()
+    api.session.close()
 
-
-def create_kubernetes_secret(namespace: str, document: dict) -> kubernetes.client.V1Secret:
-    api = kubernetes.client.CoreV1Api()
-    return api.create_namespaced_secret(namespace=namespace, body=document)
+    return secret

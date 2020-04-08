@@ -12,9 +12,11 @@ async def startup(**_):
 
 
 @kopf.on.create('postgres.database.k8s.jkroepke.de', 'v1alpha1', 'postgresdatabases')
-def create(spec: dict, meta: dict, **_):
+def create(body: dict, spec: dict, meta: dict, **_):
     db_name = lib.generate_db_name(meta.get('namespace'), meta.get('name'))
     db_username = lib.generate_db_username(meta.get('namespace'), meta.get('name'))
+
+    kopf.info(body, reason='Scheduled', message='Start creating database: {}'.format(db_name))
 
     operator_db_username = os.getenv('POSTGRES_USER')
 
@@ -24,14 +26,14 @@ def create(spec: dict, meta: dict, **_):
         message = "Can't connect to database: " + str(e)
         raise kopf.TemporaryError(message)
 
-    db_password = lib.generate_password(32)
+    db_password = lib.generate_password(40)
 
     try:
         lib.create_db_username(con, db_username, db_password)
         lib.grant_role_to_current_user(con, db_username, operator_db_username)
 
         message = "Created user {0}.".format(db_username)
-        kopf.info(spec, reason="Create user", message=message)
+        kopf.info(body, reason="Create user", message=message)
     except Exception as e:
         con.close()
 
@@ -51,7 +53,7 @@ def create(spec: dict, meta: dict, **_):
         lib.grant_connect_on_db(con, db_name, operator_db_username)
 
         message = "Created database {}.".format(db_name)
-        kopf.info(spec, reason="Create database", message=message)
+        kopf.info(body, reason="Create database", message=message)
     except Exception as e:
         lib.delete_db(con, db_name, db_username)
         lib.delete_db_username(con, db_username)
@@ -62,18 +64,18 @@ def create(spec: dict, meta: dict, **_):
 
     secret_name = spec.get('secretName')
 
-    secret = lib.generate_kubernetes_secret(
+    secret_doc = lib.generate_kubernetes_secret(
         secret_name,
         os.getenv('POSTGRES_HOST'), os.getenv('POSTGRES_POST', '5432'),
         db_name, db_username, db_password
     )
 
     # Make it our child: assign the namespace, name, labels, owner references, etc.
-    kopf.adopt(secret)
+    kopf.adopt(secret_doc)
 
     try:
-        response = lib.create_kubernetes_secret(meta.get('namespace'), secret)
-        kopf.info(response.to_dict(), reason='Secret created', message='Secret {} created'.format(secret_name))
+        secret = lib.create_kubernetes_secret(secret_doc)
+        kopf.info(secret_doc, reason='Successful Create', message='Secret created: {}'.format(secret_name))
     except Exception as e:
         lib.delete_db(con, db_name, db_username)
         lib.delete_db_username(con, db_username)
@@ -84,7 +86,8 @@ def create(spec: dict, meta: dict, **_):
 
     con.close()
 
-    return {'children': response.metadata.name}
+    kopf.info(body, reason='Successful Create', message='Database successfully created')
+    return {'children': [secret.metadata['uid']]}
 
 
 @kopf.on.update('postgres.database.k8s.jkroepke.de', 'v1alpha1', 'postgresdatabases')
@@ -93,9 +96,11 @@ def update(**_):
 
 
 @kopf.on.delete('postgres.database.k8s.jkroepke.de', 'v1alpha1', 'postgresdatabases')
-def delete(spec: dict, meta: dict, **_):
+def delete(body: dict, meta: dict, **_):
     db_name = lib.generate_db_name(meta.get('namespace'), meta.get('name'))
     db_username = lib.generate_db_username(meta.get('namespace'), meta.get('name'))
+
+    kopf.info(body, reason='Killing', message='Killing database: {}'.format(db_name))
 
     # connect to DB
     try:
@@ -108,8 +113,8 @@ def delete(spec: dict, meta: dict, **_):
     try:
         lib.delete_db(con, db_name, db_username)
 
-        message = "Delete database {}.".format(db_name)
-        kopf.info(spec, reason="Database deleted", message=message)
+        message = "Deleted database: {}.".format(db_name)
+        kopf.info(body, reason="Database Deleted", message=message)
     except Exception as e:
         con.close()
 
@@ -120,8 +125,8 @@ def delete(spec: dict, meta: dict, **_):
     try:
         lib.delete_db_username(con, db_username)
 
-        message = "Delete user {}.".format(db_username)
-        kopf.info(spec, reason="Delete user", message=message)
+        message = "Deleted user: {}.".format(db_username)
+        kopf.info(body, reason="User deleted", message=message)
     except Exception as e:
         con.close()
 
@@ -129,4 +134,5 @@ def delete(spec: dict, meta: dict, **_):
         raise kopf.TemporaryError(message, delay=10.0)
 
     con.close()
+    kopf.info(body, reason='Killed', message='Database successfully killed')
     return {'message': message}
