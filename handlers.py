@@ -12,46 +12,39 @@ import yaml
 def connect_to_postgres() -> psycopg2:
     return psycopg2.connect(
         host=os.getenv('POSTGRES_HOST'),
-        port=os.getenv('POSTGRES_POST', 5432),
+        port=os.getenv('POSTGRES_POST', '5432'),
         user=os.getenv('POSTGRES_USER'),
         password=os.getenv('POSTGRES_PASSWORD')
     )
 
 
-@kopf.on.create('k8s.jkroepke.de', 'v1', 'postgresdatabase')
+@kopf.on.create('postgres.database.postgres.database.k8s.jkroepke.de', 'v1alpha1', 'postgresdatabases')
 def create_fn(spec: dict, meta: dict, **_):
     name = meta.get('name')
-    create_user = spec.get('createUser')
-
     conn = connect_to_postgres()
 
     secret_data = {'database-name': name}
 
-    if create_user:
-        # https://gist.github.com/23maverick23/4131896
-        password = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(32))
+    # https://gist.github.com/23maverick23/4131896
+    password = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(32))
 
-        try:
-            query = f"CREATE USER \"{0}\" WITH UNENCRYPTED PASSWORD '{1}';".format(name, password)
+    try:
+        query = f"CREATE USER \"{0}\" WITH UNENCRYPTED PASSWORD '{1}';".format(name, password)
 
-            with conn.cursor() as cursor:
-                cursor.execute(query)
+        with conn.cursor() as cursor:
+            cursor.execute(query)
 
-            message = f"Created user {0}.".format(name)
-            kopf.info(spec, reason="Create user", message=message)
-        except Exception as e:
-            message = f"Can't create user: {0}".format(str(e))
-            raise kopf.HandlerFatalError(message)
+        message = f"Created user {0}.".format(name)
+        kopf.info(spec, reason="Create user", message=message)
+    except Exception as e:
+        message = f"Can't create user: {0}".format(str(e))
+        raise kopf.PermanentError(message)
 
-        secret_data['database-user'] = name
-        secret_data['database-password'] = password
+    secret_data['database-user'] = name
+    secret_data['database-password'] = password
 
     try:
         query = f"CREATE DATABASE \"{0}\";".format(name)
-
-        owner = spec.get('owner')
-        if not owner:
-            query += f" OWNER {0}".format(owner)
 
         encoding = spec.get('encoding')
         if not encoding:
@@ -81,7 +74,7 @@ def create_fn(spec: dict, meta: dict, **_):
         kopf.info(spec, reason="Create database", message=message)
     except Exception as e:
         message = f"Can't create database: {0}".format(str(e))
-        raise kopf.HandlerFatalError(message)
+        raise kopf.PermanentError(message)
 
     secret = kubernetes.client.V1Secret(
         api_version="v1",
@@ -102,15 +95,14 @@ def create_fn(spec: dict, meta: dict, **_):
     return {'children': [response.metadata.uid]}
 
 
-@kopf.on.update('k8s.jkroepke.de', 'v1', 'postgresdatabase')
-def update_fn(spec: dict, old: dict, new: dict, diff, **_):
+@kopf.on.update('postgres.database.k8s.jkroepke.de', 'v1alpha1', 'postgresdatabases')
+def update_fn(**_):
     pass
 
 
-@kopf.on.delete('k8s.jkroepke.de', 'v1', 'postgresdatabase')
+@kopf.on.delete('postgres.database.k8s.jkroepke.de', 'v1alpha1', 'postgresdatabases')
 def delete_fn(spec: dict, meta: dict, **_):
     name = meta.get('name')
-    create_user = spec.get('createUser')
     conn = connect_to_postgres()
 
     try:
@@ -121,19 +113,18 @@ def delete_fn(spec: dict, meta: dict, **_):
         message = f"Delete database {0}.".format(name)
         kopf.info(spec, reason="Delete database", message=message)
     except Exception as e:
-        message = 'Failed to delete postgresql database.'
-        raise kopf.HandlerFatalError(message)
+        message = f"Can't delete postgresql database: {0}".format(str(e))
+        raise kopf.TemporaryError(message, delay=1.0)
 
-    if create_user:
-        try:
-            query = f"DROP USER IF EXISTS \"{0}\";".format(name)
-            with conn.cursor() as cursor:
-                cursor.execute(query)
+    try:
+        query = f"DROP USER IF EXISTS \"{0}\";".format(name)
+        with conn.cursor() as cursor:
+            cursor.execute(query)
 
-            message = f"Delete user {0}.".format(name)
-            kopf.info(spec, reason="Delete user", message=message)
-        except Exception as e:
-            message = 'Failed to delete postgresql user.'
-            raise kopf.HandlerFatalError(message)
+        message = f"Delete user {0}.".format(name)
+        kopf.info(spec, reason="Delete user", message=message)
+    except Exception as e:
+        message = f"Can't delete postgresql user: {0}".format(str(e))
+        raise kopf.TemporaryError(message, delay=1.0)
 
     return {'message': message}
