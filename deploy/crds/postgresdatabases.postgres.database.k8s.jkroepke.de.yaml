@@ -32,8 +32,10 @@ spec:
           description: PostgresDatabaseSpec defines the desired state of PostgresDatabase
           type: object
           required:
-            - name
+            - secretName
           properties:
+            secretName:
+              type: string
             encoding:
               type: string
             lcCollate:

@@ -5,11 +5,13 @@ COPY requirements.txt .
 
 RUN sed -i 's/psycopg2-binary/psycopg2/' requirements.txt \
    && pip install --no-cache-dir -r requirements.txt \
-   && chgrp -R 0 . && chmod g=u -R .
+   && chgrp -R 0 . && chmod g=u -R . \
+   && chmod g=u /etc/passwd
 
+COPY docker/root/ /
 COPY handlers.py .
 
 USER 1001
 
-ENTRYPOINT ["kopf", "run", "handlers.py"]
-CMD ["--verbose"]
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["kopf", "run", "handlers.py", "--verbose"]

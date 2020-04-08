@@ -13,6 +13,13 @@ The operator based the [kopf operator framework](https://github.com/zalando-incu
 
 Be sure your are running a Kubernetes Cluster (tested with 1.11) with RBAC enabled.
 
+## CRD install
+
+```bash
+kubectl apply -f deploy/crds/postgresdatabases.postgres.database.k8s.jkroepke.de.yaml
+```
+
+## Operator install
 There is a helm chart inside `helm/charts` directory to install the operator.
 
 Prebuild images are available on docker hub. http://hub.docker.com/r/jkroepke/postgres-database-operator

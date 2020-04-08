@@ -5,3 +5,5 @@ postgresql:
   port: 5432
   user: postgres
   password: ""
+  database: "postgres"
+  rds_workaround: "false"
