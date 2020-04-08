@@ -33,5 +33,3 @@ spec:
                 secretKeyRef:
                   name: postgres-database-operator
                   key: POSTGRES_PASSWORD
-            - name: RDS_WORKAROUND
-              value: {{ .Values.postgresql.rds_workaround | quote }}

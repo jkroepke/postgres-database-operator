@@ -6,4 +6,3 @@ postgresql:
   user: postgres
   password: ""
   database: "postgres"
-  rds_workaround: "false"
