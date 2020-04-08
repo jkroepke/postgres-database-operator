@@ -131,7 +131,7 @@ def generate_kubernetes_secret(name: str, db_host: str, db_port: str, db_name: s
         "stringData": {
             'DB_HOSTNAME': db_host,
             'DB_PORT': db_port,
-            'DB_DATABASE': db_name,
+            'DB_NAME': db_name,
             'DB_USER': db_username,
             'DB_PASSWORD': db_password,
         }
