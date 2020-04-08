@@ -25,13 +25,13 @@ def connect_to_postgres() -> psycopg2:
 
 
 @kopf.on.startup()
-async def startup_fn_simple(**_):
+async def startup(**_):
     conn = connect_to_postgres()
     conn.close()
 
 
 @kopf.on.create('postgres.database.k8s.jkroepke.de', 'v1alpha1', 'postgresdatabases')
-def create_fn(spec: dict, meta: dict, **_):
+def create(spec: dict, meta: dict, **_):
     name = meta.get('name')
     try:
         conn = connect_to_postgres()
@@ -45,21 +45,18 @@ def create_fn(spec: dict, meta: dict, **_):
     try:
         encrypted_password = encrypt_password(password=password, user=name, scope=conn, algorithm='md5')
 
-        query = sql.SQL("CREATE USER {} WITH ENCRYPTED PASSWORD {}").format(
-            sql.Identifier(name),
-            sql.Literal(encrypted_password)
-        )
-
         with conn.cursor() as cur:
-            cur.execute(query)
+            cur.execute(sql.SQL("CREATE USER {} WITH ENCRYPTED PASSWORD {}").format(
+                sql.Identifier(name),
+                sql.Literal(encrypted_password)
+            ))
 
         if os.getenv('RDS_WORKAROUND', 'false') == 'true':
-            grant_query = sql.SQL("GRANT {} TO {};").format(
-                sql.Identifier(name),
-                sql.Identifier(os.getenv('POSTGRES_USER'))
-            )
             with conn.cursor() as cur:
-                cur.execute(grant_query)
+                cur.execute(sql.SQL("GRANT {} TO {};").format(
+                    sql.Identifier(name),
+                    sql.Identifier(os.getenv('POSTGRES_USER'))
+                ))
 
         message = "Created user {0}.".format(name)
         kopf.info(spec, reason="Create user", message=message)
@@ -71,55 +68,44 @@ def create_fn(spec: dict, meta: dict, **_):
         raise kopf.PermanentError(message)
 
     try:
-        raw_query = "CREATE DATABASE {} OWNER {}"
-
         encoding = spec.get('encoding')
-        if encoding:
-            raw_query += " ENCODING {}".format(encoding)
-
         lc_collate = spec.get('lcCollate')
-        if lc_collate:
-            raw_query += " LC_COLLATE {}".format(lc_collate)
-
         lc_ctype = spec.get('lcCollate')
-        if lc_ctype:
-            raw_query += " LC_CTYPE {}".format(lc_ctype)
 
-        query = sql.SQL(raw_query).format(
-            sql.Identifier(name),
-            sql.Identifier(name)
-        )
-
-        comment_query = sql.SQL("COMMENT ON DATABASE {} IS {};").format(
-            sql.Identifier(name),
-            sql.Literal(
-                "@".join([
-                    meta.get('namespace'),
-                    meta.get('uid')
-                ])
-            ),
-        )
-
-        revoke_query = sql.SQL("REVOKE connect ON DATABASE {} FROM PUBLIC;").format(
-            sql.Identifier(name)
-        )
-
-        grant_operator_query = sql.SQL("GRANT connect ON DATABASE {} TO {};").format(
-            sql.Identifier(name),
-            sql.Identifier(os.getenv('POSTGRES_USER'))
-        )
-
-        grant_user_query = sql.SQL("GRANT connect ON DATABASE {} TO {};").format(
-            sql.Identifier(name),
-            sql.Identifier(name)
-        )
+        query = "CREATE DATABASE {} OWNER {}"
+        query += " ENCODING {}".format(encoding) if encoding else ''
+        query += " LC_COLLATE {}".format(lc_collate) if lc_collate else ''
+        query += " LC_CTYPE {}".format(lc_ctype) if lc_ctype else ''
 
         with conn.cursor() as cur:
-            cur.execute(query)
-            cur.execute(comment_query)
-            cur.execute(revoke_query)
-            cur.execute(grant_operator_query)
-            cur.execute(grant_user_query)
+            cur.execute(sql.SQL(query).format(
+                sql.Identifier(name),
+                sql.Identifier(name)
+            ))
+
+            cur.execute(sql.SQL("COMMENT ON DATABASE {} IS {};").format(
+                sql.Identifier(name),
+                sql.Literal(
+                    "@".join([
+                        meta.get('namespace'),
+                        meta.get('uid')
+                    ])
+                ),
+            ))
+
+            cur.execute(sql.SQL("REVOKE connect ON DATABASE {} FROM PUBLIC;").format(
+                sql.Identifier(name)
+            ))
+
+            cur.execute(sql.SQL("GRANT connect ON DATABASE {} TO {};").format(
+                sql.Identifier(name),
+                sql.Identifier(os.getenv('POSTGRES_USER'))
+            ))
+
+            cur.execute(sql.SQL("GRANT connect ON DATABASE {} TO {};").format(
+                sql.Identifier(name),
+                sql.Identifier(name)
+            ))
 
         message = "Created database " + name + "."
         kopf.info(spec, reason="Create database", message=message)
@@ -168,12 +154,12 @@ def create_fn(spec: dict, meta: dict, **_):
 
 
 @kopf.on.update('postgres.database.k8s.jkroepke.de', 'v1alpha1', 'postgresdatabases')
-def update_fn(**_):
+def update(**_):
     pass
 
 
 @kopf.on.delete('postgres.database.k8s.jkroepke.de', 'v1alpha1', 'postgresdatabases')
-def delete_fn(spec: dict, meta: dict, **_):
+def delete(spec: dict, meta: dict, **_):
     name = meta.get('name')
     try:
         conn = connect_to_postgres()
@@ -184,29 +170,24 @@ def delete_fn(spec: dict, meta: dict, **_):
     try:
         # Check if DB exists
         with conn.cursor() as cur:
-            cur.execute("SELECT datname FROM pg_catalog.pg_database WHERE lower(datname) = lower(%s);", (name, ))
+            cur.execute("SELECT datname FROM pg_catalog.pg_database WHERE lower(datname) = lower(%s);", (name,))
 
             db_exists = cur.fetchone()
 
         if db_exists is not None:
             # Stop accepting new connections
-            revoke_query = sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC, {};").format(
-                sql.Identifier(name),
-                sql.Identifier(name)
-            )
-
             with conn.cursor() as cur:
-                cur.execute(revoke_query)
+                cur.execute(sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC, {};").format(
+                    sql.Identifier(name),
+                    sql.Identifier(name)
+                ))
 
-            query = sql.SQL("DROP DATABASE {};").format(
-                sql.Identifier(name)
-            )
+                cur.execute(sql.SQL("DROP DATABASE {};").format(
+                    sql.Identifier(name)
+                ))
 
-            with conn.cursor() as cur:
-                cur.execute(query)
-
-            message = "Delete database " + name + "."
-            kopf.info(spec, reason="Delete database", message=message)
+            message = "Delete database {}.".format(name)
+            kopf.info(spec, reason="Database deleted", message=message)
     except Exception as e:
         if conn:
             conn.close()
@@ -215,14 +196,12 @@ def delete_fn(spec: dict, meta: dict, **_):
         raise kopf.TemporaryError(message, delay=10.0)
 
     try:
-        query = sql.SQL("DROP USER {};").format(
-            sql.Identifier(name)
-        )
-
         with conn.cursor() as cur:
-            cur.execute(query)
+            cur.execute(sql.SQL("DROP USER {};").format(
+                sql.Identifier(name)
+            ))
 
-        message = "Delete user " + name + "."
+        message = "Delete user {}.".format(name)
         kopf.info(spec, reason="Delete user", message=message)
     except Exception as e:
         if conn:

@@ -14,4 +14,4 @@ COPY handlers.py .
 USER 1001
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
-CMD ["kopf", "run", "handlers.py", "--verbose"]
+CMD ["kopf", "run", "--liveness", "http://0.0.0.0:8080/healthz", "handlers.py"]
