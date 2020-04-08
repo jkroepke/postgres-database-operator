@@ -10,4 +10,4 @@ kind: PostgresDatabase
 metadata:
   name: example-postgresdatabase2
 spec:
-  secretName: example-postgresdatabase2
+  secretName: example-custom
