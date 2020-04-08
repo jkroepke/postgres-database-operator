@@ -16,10 +16,10 @@ Be sure your are running a Kubernetes Cluster (tested with 1.11) with RBAC enabl
 ## CRD install
 
 ```bash
-kubectl apply -f deploy/crds/postgresdatabases.postgres.database.k8s.jkroepke.de.yaml
+kubectl apply -f contrib/deploy/crds/postgresdatabases.postgres.database.k8s.jkroepke.de.yaml
 ```
 
 ## Operator install
-There is a helm chart inside `helm/charts` directory to install the operator.
+There is a helm chart inside [`contrib/helm/charts/postgres-database-operator`](./contrib/helm/charts/postgres-database-operator) directory to install the operator.
 
 Prebuild images are available on docker hub. http://hub.docker.com/r/jkroepke/postgres-database-operator

@@ -1,4 +1,4 @@
-FROM python:3.7
+FROM python:3.8
 WORKDIR /src/
 
 COPY requirements.txt .
@@ -9,7 +9,9 @@ RUN sed -i 's/psycopg2-binary/psycopg2/' requirements.txt \
    && chmod g=u /etc/passwd
 
 COPY docker/root/ /
+
 COPY handlers.py .
+COPY lib lib
 
 USER 1001
 

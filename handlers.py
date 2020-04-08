@@ -1,154 +1,88 @@
 #!/usr/bin/env python3
 
 import os
-import random
-import string
 import kopf
-import kubernetes.client
-import psycopg2
-
-from psycopg2 import sql
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT, encrypt_password
-
-
-def connect_to_postgres() -> psycopg2:
-    con = psycopg2.connect(
-        host=os.getenv('POSTGRES_HOST'),
-        port=os.getenv('POSTGRES_POST', '5432'),
-        user=os.getenv('POSTGRES_USER'),
-        password=os.getenv('POSTGRES_PASSWORD'),
-        database=os.getenv('POSTGRES_DATABASE')
-    )
-
-    con.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-    return con
+import lib
 
 
 @kopf.on.startup()
 async def startup(**_):
-    conn = connect_to_postgres()
-    conn.close()
+    con = lib.connect_to_postgres()
+    con.close()
 
 
 @kopf.on.create('postgres.database.k8s.jkroepke.de', 'v1alpha1', 'postgresdatabases')
 def create(spec: dict, meta: dict, **_):
-    name = meta.get('name')
+    db_name = lib.generate_db_name(meta.get('namespace'), meta.get('name'))
+    db_username = lib.generate_db_username(meta.get('namespace'), meta.get('name'))
+
+    operator_db_username = os.getenv('POSTGRES_USER')
+
     try:
-        conn = connect_to_postgres()
+        con = lib.connect_to_postgres()
     except Exception as e:
         message = "Can't connect to database: " + str(e)
         raise kopf.TemporaryError(message)
 
-    # https://gist.github.com/23maverick23/4131896
-    password = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(32))
+    db_password = lib.generate_password(32)
 
     try:
-        encrypted_password = encrypt_password(password=password, user=name, scope=conn, algorithm='md5')
+        lib.create_db_username(con, db_username, db_password)
+        lib.grant_role_to_current_user(con, db_username, operator_db_username)
 
-        with conn.cursor() as cur:
-            cur.execute(sql.SQL("CREATE USER {} WITH ENCRYPTED PASSWORD {}").format(
-                sql.Identifier(name),
-                sql.Literal(encrypted_password)
-            ))
-
-        if os.getenv('RDS_WORKAROUND', 'false') == 'true':
-            with conn.cursor() as cur:
-                cur.execute(sql.SQL("GRANT {} TO {};").format(
-                    sql.Identifier(name),
-                    sql.Identifier(os.getenv('POSTGRES_USER'))
-                ))
-
-        message = "Created user {0}.".format(name)
+        message = "Created user {0}.".format(db_username)
         kopf.info(spec, reason="Create user", message=message)
     except Exception as e:
-        if conn:
-            conn.close()
+        con.close()
 
-        message = "Can't create user: " + str(e)
+        message = "Can't create user: {}".format(str(e))
         raise kopf.PermanentError(message)
 
     try:
-        encoding = spec.get('encoding')
-        lc_collate = spec.get('lcCollate')
-        lc_ctype = spec.get('lcCollate')
+        db_comment = "@".join([
+            meta.get('namespace'),
+            meta.get('name')
+        ])
 
-        query = "CREATE DATABASE {} OWNER {}"
-        query += " ENCODING {}".format(encoding) if encoding else ''
-        query += " LC_COLLATE {}".format(lc_collate) if lc_collate else ''
-        query += " LC_CTYPE {}".format(lc_ctype) if lc_ctype else ''
+        lib.create_db(con, db_name, db_username, spec.get('encoding'), spec.get('lcCollate'), spec.get('lcCollate'),
+                      db_comment)
 
-        with conn.cursor() as cur:
-            cur.execute(sql.SQL(query).format(
-                sql.Identifier(name),
-                sql.Identifier(name)
-            ))
+        lib.grant_connect_on_db(con, db_name, db_username)
+        lib.grant_connect_on_db(con, db_name, operator_db_username)
 
-            cur.execute(sql.SQL("COMMENT ON DATABASE {} IS {};").format(
-                sql.Identifier(name),
-                sql.Literal(
-                    "@".join([
-                        meta.get('namespace'),
-                        meta.get('uid')
-                    ])
-                ),
-            ))
-
-            cur.execute(sql.SQL("REVOKE connect ON DATABASE {} FROM PUBLIC;").format(
-                sql.Identifier(name)
-            ))
-
-            cur.execute(sql.SQL("GRANT connect ON DATABASE {} TO {};").format(
-                sql.Identifier(name),
-                sql.Identifier(os.getenv('POSTGRES_USER'))
-            ))
-
-            cur.execute(sql.SQL("GRANT connect ON DATABASE {} TO {};").format(
-                sql.Identifier(name),
-                sql.Identifier(name)
-            ))
-
-        message = "Created database " + name + "."
+        message = "Created database {}.".format(db_name)
         kopf.info(spec, reason="Create database", message=message)
     except Exception as e:
-        if conn:
-            conn.close()
+        lib.delete_db(con, db_name, db_username)
+        lib.delete_db_username(con, db_username)
+        con.close()
 
-        message = "Can't create database: " + str(e)
+        message = "Can't create database: {}".format(str(e))
         raise kopf.PermanentError(message)
 
     secret_name = spec.get('secretName')
 
-    secret_data = {
-        'DB_HOSTNAME': os.getenv('POSTGRES_HOST'),
-        'DB_PORT': os.getenv('POSTGRES_POST', '5432'),
-        'DB_DATABASE': name,
-        'DB_USER': name,
-        'DB_PASSWORD': password,
-    }
-
-    secret = kubernetes.client.V1Secret(
-        metadata=kubernetes.client.V1ObjectMeta(name=secret_name),
-        string_data=secret_data,
+    secret = lib.generate_kubernetes_secret(
+        secret_name,
+        os.getenv('POSTGRES_HOST'), os.getenv('POSTGRES_POST', '5432'),
+        db_name, db_username, db_password
     )
-    api = kubernetes.client.ApiClient()
-    doc = api.sanitize_for_serialization(secret)
 
     # Make it our child: assign the namespace, name, labels, owner references, etc.
-    kopf.adopt(doc)
+    kopf.adopt(secret)
 
-    # Actually create an object by requesting the Kubernetes API.
-    api = kubernetes.client.CoreV1Api()
     try:
-        response = api.create_namespaced_secret(namespace=meta.get('namespace'), body=doc)
-        kopf.info(response.to_dict(), reason='Secret create', message='Secret {} created'.format(secret_name))
+        response = lib.create_kubernetes_secret(meta.get('namespace'), secret)
+        kopf.info(response.to_dict(), reason='Secret created', message='Secret {} created'.format(secret_name))
     except Exception as e:
-        if conn:
-            conn.close()
+        lib.delete_db(con, db_name, db_username)
+        lib.delete_db_username(con, db_username)
+        con.close()
 
-        message = "Can't create secret: " + str(e)
+        message = "Can't create secret '{}': {}".format(secret_name, str(e))
         raise kopf.PermanentError(message)
 
-    conn.close()
+    con.close()
 
     return {'children': response.metadata.name}
 
@@ -160,55 +94,39 @@ def update(**_):
 
 @kopf.on.delete('postgres.database.k8s.jkroepke.de', 'v1alpha1', 'postgresdatabases')
 def delete(spec: dict, meta: dict, **_):
-    name = meta.get('name')
+    db_name = lib.generate_db_name(meta.get('namespace'), meta.get('name'))
+    db_username = lib.generate_db_username(meta.get('namespace'), meta.get('name'))
+
+    # connect to DB
     try:
-        conn = connect_to_postgres()
+        con = lib.connect_to_postgres()
     except Exception as e:
         message = "Can't connect to database: " + str(e)
         raise kopf.TemporaryError(message)
 
+    # reject new connections and delete database
     try:
-        # Check if DB exists
-        with conn.cursor() as cur:
-            cur.execute("SELECT datname FROM pg_catalog.pg_database WHERE lower(datname) = lower(%s);", (name,))
+        lib.delete_db(con, db_name, db_username)
 
-            db_exists = cur.fetchone()
-
-        if db_exists is not None:
-            # Stop accepting new connections
-            with conn.cursor() as cur:
-                cur.execute(sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC, {};").format(
-                    sql.Identifier(name),
-                    sql.Identifier(name)
-                ))
-
-                cur.execute(sql.SQL("DROP DATABASE {};").format(
-                    sql.Identifier(name)
-                ))
-
-            message = "Delete database {}.".format(name)
-            kopf.info(spec, reason="Database deleted", message=message)
+        message = "Delete database {}.".format(db_name)
+        kopf.info(spec, reason="Database deleted", message=message)
     except Exception as e:
-        if conn:
-            conn.close()
+        con.close()
 
-        message = "Can't delete postgresql database: " + str(e)
+        message = "Can't delete postgresql database: {}".format(str(e))
         raise kopf.TemporaryError(message, delay=10.0)
 
+    # delete database owner
     try:
-        with conn.cursor() as cur:
-            cur.execute(sql.SQL("DROP USER {};").format(
-                sql.Identifier(name)
-            ))
+        lib.delete_db_username(con, db_username)
 
-        message = "Delete user {}.".format(name)
+        message = "Delete user {}.".format(db_username)
         kopf.info(spec, reason="Delete user", message=message)
     except Exception as e:
-        if conn:
-            conn.close()
+        con.close()
 
-        message = "Can't delete postgresql user: " + str(e)
+        message = "Can't delete postgresql user: {}".format(str(e))
         raise kopf.TemporaryError(message, delay=10.0)
 
-    conn.close()
+    con.close()
     return {'message': message}

@@ -4,7 +4,7 @@ kind: ServiceAccount
 metadata:
   name: postgres-database-operator-account
 ---
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: postgres-database-operator-role-cluster
@@ -39,7 +39,7 @@ rules:
     resources: [events]
     verbs: [create]
 ---
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: postgres-database-operator-rolebinding-cluster
