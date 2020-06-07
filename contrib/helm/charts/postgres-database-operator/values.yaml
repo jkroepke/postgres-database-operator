@@ -7,3 +7,9 @@ postgresql:
   password: ""
   database: "postgres"
   proxyHost: ""
+  bgBouncerAuthQuerySupport: false
+  bgBouncerAuthQueryDbHost: postgres
+  bgBouncerAuthQueryDbPort: 5432
+  bgBouncerAuthQueryDbUser: pgbouncer
+  bgBouncerAuthQueryDbPassword: ""
+  bgBouncerAuthQueryDbName: pgbouncer

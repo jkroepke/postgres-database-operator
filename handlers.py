@@ -3,12 +3,17 @@
 import os
 import kopf
 import lib
+import lib.pgbouncer
 
 
 @kopf.on.startup()
 async def startup(**_):
     con = lib.connect_to_postgres()
     con.close()
+    if lib.pgbouncer.enabled():
+        con = lib.pgbouncer.connect_to_postgres()
+        lib.pgbouncer.create_database(con)
+        con.close()
 
 
 @kopf.on.create('postgres.database.k8s.jkroepke.de', 'v1alpha1', 'postgresdatabases')
@@ -31,6 +36,11 @@ def create(body: dict, spec: dict, meta: dict, **_):
     try:
         lib.create_db_username(con, db_username, db_password)
         lib.grant_role_to_current_user(con, db_username, operator_db_username)
+
+        if lib.pgbouncer.enabled():
+            con_proxy = lib.pgbouncer.connect_to_postgres()
+            lib.pgbouncer.insert_db_username(con_proxy, db_username, db_password)
+            con_proxy.close()
 
         message = "Created user {0}.".format(db_username)
         kopf.info(body, reason="Create user", message=message)
@@ -126,6 +136,11 @@ def delete(body: dict, meta: dict, **_):
     # delete database owner
     try:
         lib.delete_db_username(con, db_username)
+
+        if lib.pgbouncer.enabled():
+            con_proxy = lib.pgbouncer.connect_to_postgres()
+            lib.pgbouncer.remove_db_username(con_proxy, db_username)
+            con_proxy.close()
 
         message = "Deleted user: {}.".format(db_username)
         kopf.info(body, reason="User deleted", message=message)

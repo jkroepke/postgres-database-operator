@@ -33,7 +33,24 @@ spec:
                 secretKeyRef:
                   name: postgres-database-operator
                   key: POSTGRES_PASSWORD
-            {{ if .Values.postgresql.proxyHost }}
+            {{- if .Values.postgresql.proxyHost }}
             - name: POSTGRES_PROXY_HOST
               value: {{ .Values.postgresql.proxyHost | quote }}
-            {{ end }}
+            {{- end }}
+            {{- if .Values.postgresql.bgBouncerAuthQuerySupport }}
+            - name: PGBOUNCER_AUTH_QUERY_SUPPORT
+              value: {{ .Values.postgresql.bgBouncerAuthQuerySupport | quote }}
+            - name: PGBOUNCER_AUTH_QUERY_DB_HOST
+              value: {{ .Values.postgresql.bgBouncerAuthQueryDbHost | quote }}
+            - name: PGBOUNCER_AUTH_QUERY_DB_PORT
+              value: {{ .Values.postgresql.bgBouncerAuthQueryDbPort | quote }}
+            - name: PGBOUNCER_AUTH_QUERY_DB_USER
+              value: {{ .Values.postgresql.bgBouncerAuthQueryDbUser | quote }}
+            - name: PGBOUNCER_AUTH_QUERY_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-database-operator
+                  key: PGBOUNCER_AUTH_QUERY_DB_PASSWORD
+            - name: PGBOUNCER_AUTH_QUERY_DB_NAME
+              value: {{ .Values.postgresql.bgBouncerAuthQueryDbName | quote }}
+            {{- end }}
