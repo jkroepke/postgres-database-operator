@@ -33,3 +33,7 @@ spec:
                 secretKeyRef:
                   name: postgres-database-operator
                   key: POSTGRES_PASSWORD
+            {{ if .Values.postgresql.proxyHost }}
+            - name: POSTGRES_PROXY_HOST
+              value: {{ .Values.postgresql.proxyHost | quote }}
+            {{ end }}

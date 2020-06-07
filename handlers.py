@@ -64,9 +64,11 @@ def create(body: dict, spec: dict, meta: dict, **_):
 
     secret_name = spec.get('secretName')
 
+    db_host = os.getenv('POSTGRES_PROXY_HOST', os.getenv('POSTGRES_HOST'))
+
     secret_doc = lib.generate_kubernetes_secret(
         secret_name,
-        os.getenv('POSTGRES_HOST'), os.getenv('POSTGRES_POST', '5432'),
+        db_host, os.getenv('POSTGRES_POST', '5432'),
         db_name, db_username, db_password
     )
 

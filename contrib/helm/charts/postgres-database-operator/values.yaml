@@ -6,3 +6,4 @@ postgresql:
   user: postgres
   password: ""
   database: "postgres"
+  proxyHost: ""
