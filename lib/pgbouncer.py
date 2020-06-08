@@ -9,11 +9,11 @@ def enabled() -> bool:
 
 def connect_to_postgres() -> psycopg2:
     con = psycopg2.connect(
-        host=os.getenv('PGBOUNCER_AUTH_QUERY_HOST'),
-        port=os.getenv('PGBOUNCER_AUTH_QUERY_POST', '5432'),
-        user=os.getenv('PGBOUNCER_AUTH_QUERY_USER'),
-        password=os.getenv('PGBOUNCER_AUTH_QUERY_PASSWORD'),
-        database=os.getenv('PGBOUNCER_AUTH_QUERY_DATABASE')
+        host=os.getenv('PGBOUNCER_AUTH_QUERY_DB_HOST'),
+        port=os.getenv('PGBOUNCER_AUTH_QUERY_DB_POST', '5432'),
+        user=os.getenv('PGBOUNCER_AUTH_QUERY_DB_USER'),
+        password=os.getenv('PGBOUNCER_AUTH_QUERY_DB_PASSWORD'),
+        database=os.getenv('PGBOUNCER_AUTH_QUERY_DB_NAME')
     )
 
     con.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
