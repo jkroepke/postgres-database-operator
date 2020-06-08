@@ -39,12 +39,12 @@ def connect_to_postgres() -> psycopg2:
 
 
 def create_db_username(con: psycopg2, name: str, password: str) -> None:
-    encrypted_password = encrypt_password(password=password, user=name, scope=con, algorithm='md5')
+    password_encrypted = encrypt_password(password=password, user=name, scope=con, algorithm='md5')
 
     with con.cursor() as cur:
         cur.execute(sql.SQL("CREATE USER {} WITH ENCRYPTED PASSWORD {}").format(
             sql.Identifier(name),
-            sql.Literal(encrypted_password)
+            sql.Literal(password_encrypted)
         ))
 
 

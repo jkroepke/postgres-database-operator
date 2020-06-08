@@ -1,6 +1,6 @@
 import os
 import psycopg2
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT, encrypt_password
 
 
 def enabled() -> bool:
@@ -25,9 +25,11 @@ def create_database(con: psycopg2):
         cur.execute("CREATE TABLE IF NOT EXISTS pgbouncer_shadow (usename text, passwd text);")
 
 
-def insert_db_username(con: psycopg2, db_username: str, db_password: str):
+def insert_db_username(con: psycopg2, name: str, password: str):
+    password_encrypted = encrypt_password(password=password, user=name, scope=con, algorithm='md5')
+
     with con.cursor() as cur:
-        cur.execute("INSERT INTO pgbouncer_shadow VALUES (%s, %s);", (db_username, db_password))
+        cur.execute("INSERT INTO pgbouncer_shadow VALUES (%s, %s);", (name, password_encrypted))
 
 
 def remove_db_username(con: psycopg2, db_username: str):
